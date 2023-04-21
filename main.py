@@ -3,7 +3,11 @@ import time
 import random
 import ipaddress
 import os
+import json
 import socket
+import threading
+import datetime
+import platform
 
 # Define functions
 def clear():
@@ -29,49 +33,77 @@ def generateIpsRange(start_ip, end_ip):
     for ip in range(int(start_ip), int(end_ip)+1):
         ip_list.append(str(ipaddress.ip_address(ip)))
     return ip_list
+def generate_port_report(port_list, client):
+    # Get current timestamp
+    timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3] + ' UTC'
+    
+    # Get host netname and username
+    host = str(platform.node())  # Replace with actual host netname
+    user = str(os.getlogin())  # Replace with actual username
+    
+    # Generate report header
+    report = f"Timestamp: {timestamp}\nHost: {host}\nUser: {user}\n---------------------\nClient: {client}\nPort Range: 1-65535\n------------------------\nOpen Ports\n"
+    
+    # Generate report body
+    for port in port_list:
+        service_name = port_to_service(port)
+        report += f"    {service_name}\n"
 
-def scanIp(ip):
-    ip = '192.168.0.57'
-    timeout = 0.1
+    timestamp = timestamp.replace(":", "-")
+    filename = f"Reports/report_{client}_({timestamp}).txt"
+    file = open(filename, "w")
+    file.write(report)
+    file.close()
+    return filename
 
-    for port in range(19, 65536):
+
+def portScan(target, start_port=1, end_port=65535):
+
+    # List to keep track of threads and open ports
+    threads = []
+    ports = []
+
+    def check_port(port):
+        thread_id = threading.current_thread().ident
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.5)
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(timeout)
-                s.connect((ip, port))
-                print(port_to_service(port))
+            sock.connect((target, port))
+            ports.append(port)
         except:
             pass
+        finally:
+            sock.close()
+
+    # Create a thread for each port
+    print("Scanning ... Please wait this may take a while")
+    for port in range(start_port, end_port+1):
+        t = threading.Thread(target=check_port, args=(port,))
+        threads.append(t)
+        t.start()
+
+    # Wait for all threads to complete
+    for t in threads:
+        t.join()
+
+    # All threads have completed
+    print("All threads have completed")
+    ports.sort()
+    print (ports)
+    return ports
+
+
 
 def port_to_service(port):
-    service_dict = {
-        20: 'FTP (File Transfer Protocol)',
-        21: 'FTP (File Transfer Protocol)',
-        22: 'SSH (Secure Shell)',
-        23: 'Telnet',
-        25: 'SMTP (Simple Mail Transfer Protocol)',
-        53: 'DNS (Domain Name System)',
-        80: 'HTTP (Hypertext Transfer Protocol)',
-        110: 'POP3 (Post Office Protocol version 3)',
-        119: 'NNTP (Network News Transfer Protocol)',
-        123: 'NTP (Network Time Protocol)',
-        143: 'IMAP (Internet Message Access Protocol)',
-        161: 'SNMP (Simple Network Management Protocol)',
-        443: 'HTTPS (HTTP Secure)',
-        465: 'SMTPS (SMTP Secure)',
-        587: 'SMTP (Mail Submission Agent)',
-        993: 'IMAPS (IMAP Secure)',
-        995: 'POP3S (POP3 Secure)',
-        1433: 'Microsoft SQL Server',
-        3306: 'MySQL Database',
-        5432: 'PostgreSQL Database'
-    }
 
+    # Read the JSON object from a file
+    with open('services.json', 'r') as file:
+        port_to_service = json.load(file)
 
-    if port in service_dict:
-        return str("Port " + str(port) + ": " + service_dict[port] + " is open")
+    if str(port) in port_to_service:
+        return str("Port " + str(port) + ": " + port_to_service[str(port)] + " is open")
     else:
-        return str("Port " + str(port) + " is open")
+        return str("Port " + str(port) + ": Unknown is open")
 
 
 
@@ -88,8 +120,15 @@ def menu():
         case "1":
             subnet = input("Please enter the subnet you want to scan >> ")
         case "2":
+
             ip = input("Please enter the IP you want to scan >> ")
-            scanIp(ip)
+
+            openPorts = portScan(ip)
+            print("\n\n Open ports:")
+            for port in openPorts:
+                print(port_to_service(port))
+            print("Report Generated: " + generate_port_report(openPorts, ip))
+
         case "3":
             ip1 = input("Enter the start ip >> ")
             ip2 = input("Enter the end ip >> ")
