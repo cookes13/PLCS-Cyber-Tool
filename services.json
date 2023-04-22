@@ -59,8 +59,10 @@
     "5555": "Commplex Main",
     "5900": "VNC",
     "5901": "VNC alternate",
+    "5939": "TeamViewer",
     "6112": "Battle.net",
     "6667": "IRC",
+    "7777": "Terraria",
     "8000": "HTTP Alternate",
     "8080": "HTTP Alternate",
     "8767": "TeamSpeak",
@@ -72,5 +74,5 @@
     "27015": "Steam",
     "27016": "Steam Alternate",
     "28015": "Rust",
-    "7777": "Terraria"
+    "54236":"Razer Chroma SDK"
 }
