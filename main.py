@@ -58,8 +58,9 @@ def generate_report(service,data):
                 output_str += f"    {client}\n"
             subnet = str(data['subnet']).replace("/", "_")
             filename = f"Reports/{service}_{subnet}_({timestamp}).txt"
-        case "ip range":
-            output_str += f"Start Ip: {data['start_ip']}\nEnd Ip: {data['end_ip']}\n------------------------\nOnline Clients:\n"
+        case "range scan":
+            filename = f"Reports/{service}_{data['start_ip']} - {data['end_ip']}_({timestamp}).txt"
+            output_str += f"Start Ip: {data['start_ip']}\nEnd Ip:   {data['end_ip']}\n------------------------\nOnline Clients:\n"
             for client in data['online_clients']:
                 output_str += f"    {client}\n"
     
@@ -82,7 +83,18 @@ def generate_subnet(ip, mask=""):
     
     subnet = ipaddress.IPv4Network(str(ip) + mask, strict=False)
     return subnet
+def generate_ip_range(start_ip, end_ip):
+    try:
+        start_ip = ipaddress.IPv4Address(str(start_ip))
+        end_ip = ipaddress.IPv4Address(str(end_ip))
+    except ValueError:
+        return "Error: Invalid IP address"
 
+    # Create a list of all IP addresses in the range
+    ip_range = []
+    for ip_int in range(int(start_ip), int(end_ip)+1):
+        ip_range.append(str(ipaddress.IPv4Address(ip_int)))
+    return ip_range
 
 # Scanners
 def portScan(target, start_port=1, end_port=65535):
@@ -177,6 +189,62 @@ def scanNetwork(network_subnet):
         thread.join()
 
     return clients
+def scanRange(start_ip, end_ip):
+    addresses = generate_ip_range(str(start_ip), str(end_ip))
+
+    # Determine the appropriate ping command and flags for the current operating system
+    if platform.system() == "Windows":
+        ping_cmd = "ping"
+        ping_flags = "-n 1 -w 500"
+        latency_pattern = r"Average = (\d+)ms"
+    else:
+        ping_cmd = "ping"
+        ping_flags = "-c1 -W 100"
+        latency_pattern = r"time=(\d+\.\d+)"
+
+    # Create a lock to synchronize thread output
+    lock = threading.Lock()
+
+    # Define a function to ping an IP address
+    def ping_ip(ip):
+        # Use the ping command to ping the IP address
+        cmd = f"{ping_cmd} {ping_flags} {ip}"
+        result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        # Extract the latency from the output using a regular expression
+        latency_match = re.search(latency_pattern, result.stdout)
+        
+        # Print the result and the latency using the lock to synchronize output
+        with lock:
+            if result.returncode == 0:
+                try:
+                    print(f"{ip} is up! Latency: {latency_match.group(1)} ms")
+                    clients.append(ip)
+                except Exception as e:
+                    print(e)
+                    print(f"Error: Latency not found for {ip}")
+
+    # Create a list to hold the threads
+    clear()
+    threads = []
+    clients = []
+
+    count=0
+    for address in addresses:
+        count+=1
+
+    print(f"Scanning {count} addresses ... Please wait this may take a while")
+    # Start a thread for each IP address in the range
+    for ip in addresses:
+        thread = threading.Thread(target=ping_ip, args=(ip,))
+        threads.append(thread)
+        thread.start()
+
+    # Wait for all threads to finish
+    for thread in threads:
+        thread.join()
+
+    return clients
 
 
 def menu():
@@ -223,9 +291,26 @@ def menu():
             generate_report("Port Scan", data)
 
         case "3":
-            ip1 = input("Enter the start ip >> ")
-            ip2 = input("Enter the end ip >> ")
-            # print (generateIpsRange(ip1, ip2))
+            while True:
+                ip1 = input("Enter the start ip >> ")
+                ip2 = input("Enter the end ip >> ")
+                clients = scanRange(ip1, ip2)
+                if "Error" in clients:
+                    print(clients)
+                else:
+                    break
+
+            print("Generating Report ...")
+            data = {
+                "start_ip": ip1,
+                "end_ip": ip2,
+                "online_clients": clients
+            }
+            generate_report("Range Scan", data)
+
+
+
+
         case "4":
             print ("Exiting...")
 
