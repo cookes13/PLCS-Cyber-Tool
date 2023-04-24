@@ -47,20 +47,20 @@ def generate_report(service,data):
 
     match service.lower():
         case "port scan":
-            output_str += f"Client: {data['client']}\nPort Range: {data['start_port']}-{data['end_port']}\n------------------------\nOpen Ports:\n"
+            output_str += f"Client: {data['client']}\nPort Range: {data['start_port']}-{data['end_port']}\n\nOpen Ports: {len(data['open_ports'])}\nDuration: {data['duration']}\n------------------------\nOpen Ports:\n"
             for port in data['open_ports']:
                 service_name = port_to_service(port)
                 output_str += f"    {service_name}\n"
             filename = f"Reports/{service}_{data['client']}_({timestamp}).txt"
         case "network scan":
-            output_str += f"Subnet: {data['subnet']}\n------------------------\nOnline Clients:\n"
+            output_str += f"Subnet: {data['subnet']}\n\nClients Found: {len(data['online_clients'])}\nDuration: {data['duration']}\n------------------------\nOnline Clients:\n"
             for client in data['online_clients']:
                 output_str += f"    {client}\n"
             subnet = str(data['subnet']).replace("/", "_")
             filename = f"Reports/{service}_{subnet}_({timestamp}).txt"
         case "range scan":
             filename = f"Reports/{service}_{data['start_ip']} - {data['end_ip']}_({timestamp}).txt"
-            output_str += f"Start Ip: {data['start_ip']}\nEnd Ip:   {data['end_ip']}\n------------------------\nOnline Clients:\n"
+            output_str += f"Start Ip: {data['start_ip']}\nEnd Ip:   {data['end_ip']}\n\nClients Found: {len(data['online_clients'])}\nDuration: {data['duration']}\n------------------------\nOnline Clients:\n"
             for client in data['online_clients']:
                 output_str += f"    {client}\n"
     
@@ -95,7 +95,14 @@ def generate_ip_range(start_ip, end_ip):
     for ip_int in range(int(start_ip), int(end_ip)+1):
         ip_range.append(str(ipaddress.IPv4Address(ip_int)))
     return ip_range
-
+def validate_ip(ip_address):
+    if ip_address == "localhost":
+        return ip_address
+    try:
+        ip_address = ipaddress.IPv4Address(ip_address)
+        return ip_address
+    except ipaddress.AddressValueError:
+        return False
 # Scanners
 def portScan(target, start_port=1, end_port=65535):
     clear()
@@ -115,9 +122,14 @@ def portScan(target, start_port=1, end_port=65535):
             pass
         finally:
             sock.close()
+
     # List to keep track of threads and open ports
     threads = []
     ports = []
+    
+    # Start timing
+    start_time = time.time()
+    
     # Create a thread for each port
     print(f"Scanning {target} ... Please wait this may take a while")
     for port in range(start_port, end_port+1):
@@ -128,8 +140,16 @@ def portScan(target, start_port=1, end_port=65535):
     # Wait for all threads to complete
     for t in threads:
         t.join()
+    
+    # End timing
+    end_time = time.time()
+    time_elapsed_ms = round((end_time - start_time) * 1000)
+    time_elapsed_ms = "{:,}".format(time_elapsed_ms)
+
     ports.sort()
-    return ports
+    num_ports = len(ports)
+    print(f"{num_ports} ports found in {time_elapsed_ms}ms")
+    return ports, time_elapsed_ms
 def scanNetwork(network_subnet):
     # Parse the IP range into a network object
     try:
@@ -173,6 +193,9 @@ def scanNetwork(network_subnet):
     threads = []
     clients = []
 
+    # Start timing
+    start_time = time.time()
+
     count=0
     for address in network:
         count+=1
@@ -188,7 +211,13 @@ def scanNetwork(network_subnet):
     for thread in threads:
         thread.join()
 
-    return clients
+    # End timing
+    end_time = time.time()
+    time_elapsed_ms = round((end_time - start_time) * 1000)
+    time_elapsed_ms = "{:,}".format(time_elapsed_ms)
+
+
+    return clients, time_elapsed_ms
 def scanRange(start_ip, end_ip):
     addresses = generate_ip_range(str(start_ip), str(end_ip))
 
@@ -229,6 +258,9 @@ def scanRange(start_ip, end_ip):
     threads = []
     clients = []
 
+    # Start timing
+    start_time = time.time()
+
     count=0
     for address in addresses:
         count+=1
@@ -244,7 +276,13 @@ def scanRange(start_ip, end_ip):
     for thread in threads:
         thread.join()
 
-    return clients
+
+    # End timing
+    end_time = time.time()
+    time_elapsed_ms = round((end_time - start_time) * 1000)
+    time_elapsed_ms = "{:,}".format(time_elapsed_ms)
+
+    return clients, time_elapsed_ms
 
 
 def menu():
@@ -265,31 +303,50 @@ def menu():
                     continue
                 subnet = generate_subnet(subnet)
                 clients = scanNetwork(subnet)
+
                 if "Error" in clients:
                     print(clients)
                 else:
                     break
+                
+            duration = clients[1]
+            clients = clients[0]
 
             print("Generating Report ...")
             data = {
                 "subnet": subnet,
-                "online_clients": clients
+                "online_clients": clients,
+                "duration": f"{duration} ms"
             }
-            generate_report("Network Scan", data)
+            reportFile = generate_report('Network Scan', data)
+            print(f"Report written to {reportFile}")
+            input("Press {Enter} to Continue  ")
+            menu()
+
         case "2":
-            ip = input("Please enter the IP you want to scan >> ")
+            while True:
+                ip = validate_ip(input("Please enter the IP you want to scan >> "))
+                if ip == False:
+                    print("Error: Invalid IP Address")
+                else:
+                    break
             openPorts = portScan(ip)
+            duration = openPorts[1]
+            openPorts = openPorts[0]
             print("Generating Report ...")
-            time.sleep(1)
+            time.sleep(5)
             clear()
             data = {
                 "client": ip,
                 "start_port": 1,
                 "end_port": 65535,
+                "duration": f"{duration} ms",
                 "open_ports": openPorts
             }
-            generate_report("Port Scan", data)
-
+            reportFile = generate_report("Port Scan", data)
+            print(f"Report written to {reportFile}")
+            input("Press {Enter} to Continue  ")
+            menu()
         case "3":
             while True:
                 ip1 = input("Enter the start ip >> ")
@@ -299,20 +356,28 @@ def menu():
                     print(clients)
                 else:
                     break
+            duration = clients[1]
+            clients = clients[0]
 
             print("Generating Report ...")
             data = {
                 "start_ip": ip1,
                 "end_ip": ip2,
-                "online_clients": clients
+                "online_clients": clients,
+                "duration": f"{duration} ms"
             }
-            generate_report("Range Scan", data)
-
-
-
-
+            reportFile = generate_report("Range Scan", data)
+            print(f"Report written to {reportFile}")
+            input("Press {Enter} to Continue  ")
+            menu()
         case "4":
             print ("Exiting...")
+            time.sleep(1)
+            quit()
+        case _:
+            print("Error: Invalid choice")
+            time.sleep(0.5)
+            menu()
 
 menu()
 
